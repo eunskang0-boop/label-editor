@@ -1378,7 +1378,14 @@ var LabelCore = (function () {
     { no: 9, name: '엑셀 파일 불러오기', premium: true }, { no: 10, name: '유통기한 자동 계산', premium: true },
     { no: 11, name: 'QR코드 생성', premium: true }, { no: 12, name: '고해상도 PDF 저장', premium: true }
   ];
-  function planOf(p) { return p && p.meta && p.meta.plan === 'deluxe' ? 'deluxe' : 'premium'; }
+  function planOf(p) { return p && p.meta && p.meta.plan === 'deluxe' && !tierOf(p) ? 'deluxe' : 'premium'; }
+  // B2B(회사·연구소·제조사) 패키지: 편집기는 PREMIUM과 같고(전체 도구 12가지), 디자인 수·라벨지 규격·품목 입력 대행 범위가 다름
+  var B2B = {
+    starter: { id: 'starter', name: 'B2B STARTER', price: '390,000원', designs: 3, sheets: 2, items: 30 },
+    business: { id: 'business', name: 'B2B BUSINESS', price: '590,000원', designs: 6, sheets: 3, items: 150, manual: true },
+    enterprise: { id: 'enterprise', name: 'B2B ENTERPRISE', price: '990,000원', designs: 10, sheets: 5, items: 500, manual: true, styleGuide: true }
+  };
+  function tierOf(p) { var t = p && p.meta && p.meta.tier; return t && B2B[t] ? t : null; }
   function planTools(plan) { return TOOLS.filter(function (t) { return plan === 'premium' || !t.premium; }); }
   // DELUXE에 옵션으로 더할 수 있는 도구 (사업 계획서의 추가 옵션)
   var ADDONS = [
@@ -1404,11 +1411,12 @@ var LabelCore = (function () {
   }
   // 패키지 점검: 사업 계획서의 패키지 구성과 비교 → [{ kind: 'ok'|'opt'|'warn', text }]
   function packageReport(p) {
-    var plan = planOf(p), f = features(p), out = [];
+    var plan = planOf(p), f = features(p), out = [], T = tierOf(p) ? B2B[tierOf(p)] : null;
     var add = function (kind, text) { out.push({ kind: kind, text: text }); };
-    var nd = p.designs.length, needD = plan === 'premium' ? 3 : 1, pn = plan === 'premium' ? 'PREMIUM은' : 'DELUXE는';
+    var nd = p.designs.length, needD = T ? T.designs : plan === 'premium' ? 3 : 1, pn = T ? T.name + '는' : plan === 'premium' ? 'PREMIUM은' : 'DELUXE는';
     if (nd === needD) add('ok', '디자인 ' + nd + '종');
     else if (nd > needD) add('opt', '디자인 ' + nd + '종 — 디자인 추가 옵션 ' + (nd - needD) + '종 (65,000원/종)');
+    else if (T) add('opt', '디자인 ' + nd + '종 — ' + pn + ' ' + needD + '종까지 포함이에요 (남은 ' + (needD - nd) + '종은 고객 요청 때)');
     else add('warn', '디자인 ' + nd + '종 — ' + pn + ' ' + needD + '종이에요');
     // 라벨지 규격: 주문 전체에서 쓰는 칼선 라벨지 종류 수 (전지 스티커 용지 자동 배치는 세지 않음)
     var specs = {};
@@ -1422,12 +1430,19 @@ var LabelCore = (function () {
       if (d.sheetId !== 'auto') specs[d.sheetId === 'custom' ? 'custom:' + d.id : d.sheetId] = 1;
       extraSheetList(d).forEach(function (x) { specs[typeof x.id === 'string' && findSheet(x.id) ? x.id : 'x:' + x.id] = 1; });
     });
-    var ns = Object.keys(specs).length, freeS = plan === 'premium' ? 2 : 1;
+    var ns = Object.keys(specs).length, freeS = T ? T.sheets : plan === 'premium' ? 2 : 1;
     if (ns > freeS) add('opt', '라벨지 규격 ' + ns + '개 — 규격 추가 옵션 ' + (ns - freeS) + '개 (포함 ' + freeS + '개)');
     else add('ok', '라벨지 규격 ' + ns + '개 (포함 ' + freeS + '개)');
     if (plan === 'deluxe') ADDONS.forEach(function (a) { if (f[a.key]) add('opt', a.name + ' (' + a.price + ')'); });
     if (f.excel) add('ok', '엑셀 양식(라벨_품목_양식.xlsx)도 함께 보내세요');
     if (plan === 'premium') add('ok', '사용법 영상도 함께 보내세요');
+    if (T) {
+      var items = p.designs.reduce(function (n, d) { return n + (d.presets || []).length; }, 0);
+      if (items > T.items) add('opt', '품목 입력 대행 ' + items + '개 — ' + T.name + ' 포함 ' + T.items + '개를 넘어요 (추가 견적)');
+      else add('ok', '품목 입력 대행 ' + items + '개 (포함 ' + T.items + '개까지)');
+      if (T.manual) add('ok', '직원용 라벨 운영표(라벨_운영표.pdf) — 납품 스크립트가 만들어요');
+      if (T.styleGuide) add('ok', '라벨 스타일 가이드 PDF(제품군 색 · 정보 배치 규칙)도 함께 보내세요');
+    }
     return out;
   }
   // 고객 편집기 화면 색 — 디자인과 상관없이 항상 같음 (상세페이지 화면과 동일)
@@ -2199,7 +2214,8 @@ var LabelCore = (function () {
     p.version = p.version || VERSION;
     p.id = p.id || uid('p');
     p.meta = Object.assign({ title: '라벨', seller: '', note: '', accent: EDITOR_ACCENT, webUrl: '', plan: 'premium' }, p.meta || {});
-    if (p.meta.plan !== 'deluxe') p.meta.plan = 'premium';
+    if (p.meta.tier && !B2B[p.meta.tier]) delete p.meta.tier;
+    if (p.meta.plan !== 'deluxe' || p.meta.tier) p.meta.plan = 'premium'; // B2B는 PREMIUM 편집기
     p.meta.addons = Object.assign({ excel: false, expiry: false, qr: false, pdf: false }, p.meta.addons || {});
     p.assets = p.assets || {};
     p.fonts = p.fonts || [];
@@ -2384,7 +2400,7 @@ var LabelCore = (function () {
     DATE_FORMATS: DATE_FORMATS, todayISO: todayISO, formatDate: formatDate, addDate: addDate, parseISO: parseISO, formatNumber: formatNumber,
     rawText: rawText, displayText: displayText, isVisible: isVisible, colorKey: colorKey, colorOf: colorOf, findEl: findEl, dateISOFor: dateISOFor,
     effEl: effEl, layoutRange: layoutRange, LAYOUT_KEYS: LAYOUT_KEYS,
-    PLANS: PLANS, TOOLS: TOOLS, ADDONS: ADDONS, planOf: planOf, planTools: planTools, features: features, toolsFor: toolsFor, EDITOR_ACCENT: EDITOR_ACCENT, packageReport: packageReport,
+    PLANS: PLANS, TOOLS: TOOLS, ADDONS: ADDONS, B2B: B2B, tierOf: tierOf, planOf: planOf, planTools: planTools, features: features, toolsFor: toolsFor, EDITOR_ACCENT: EDITOR_ACCENT, packageReport: packageReport,
     deluxeEditable: deluxeEditable, sheetPDF: sheetPDF,
     FIELD_ALIASES: FIELD_ALIASES, normKey: normKey, aliasGroup: aliasGroup, importFields: importFields, templateTable: templateTable,
     qrModules: qrModules, eanData: eanData,

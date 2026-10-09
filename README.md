@@ -13,5 +13,6 @@
 
 - DELUXE (기본 도구 8가지): https://eunskang0-boop.github.io/label-editor/deluxe/
 - PREMIUM (전체 도구 12가지): https://eunskang0-boop.github.io/label-editor/premium/
+- B2B (연구소·제조사): https://eunskang0-boop.github.io/label-editor/b2b/
 
 이 저장소에는 빈 편집기 페이지와 샘플만 있고, 고객 데이터나 디자인 원본은 들어 있지 않습니다.
