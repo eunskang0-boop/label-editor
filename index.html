@@ -923,13 +923,13 @@ var LabelCore = (function () {
     { family: 'East Sea Dokdo', label: '동해독도', cat: 'hand', weights: [400] },
     { family: 'Dokdo', label: '독도', cat: 'hand', weights: [400] },
     { family: 'Kirang Haerang', label: '기랑해랑', cat: 'hand', weights: [400] },
-    { family: 'Montserrat', label: 'Montserrat (영문)', cat: 'latin', variable: '100..900' },
+    { family: 'Montserrat', label: 'Montserrat (영문)', cat: 'latin', variable: '100..900', italic: true },
     { family: 'Poppins', label: 'Poppins (영문)', cat: 'latin', weights: [300, 400, 500, 600, 700, 800] },
-    { family: 'Josefin Sans', label: 'Josefin Sans (영문)', cat: 'latin', variable: '100..700' },
+    { family: 'Josefin Sans', label: 'Josefin Sans (영문)', cat: 'latin', variable: '100..700', italic: true },
     { family: 'Oswald', label: 'Oswald (영문)', cat: 'latin', variable: '200..700' },
     { family: 'Bebas Neue', label: 'Bebas Neue (영문)', cat: 'latin', weights: [400] },
-    { family: 'Playfair Display', label: 'Playfair Display (영문)', cat: 'latin', variable: '400..900' },
-    { family: 'Cormorant Garamond', label: 'Cormorant Garamond (영문)', cat: 'latin', variable: '300..700' },
+    { family: 'Playfair Display', label: 'Playfair Display (영문)', cat: 'latin', variable: '400..900', italic: true },
+    { family: 'Cormorant Garamond', label: 'Cormorant Garamond (영문)', cat: 'latin', variable: '300..700', italic: true },
     { family: 'DM Serif Display', label: 'DM Serif Display (영문)', cat: 'latin', weights: [400] },
     { family: 'Libre Baskerville', label: 'Libre Baskerville (영문)', cat: 'latin', weights: [400, 700] },
     { family: 'Abril Fatface', label: 'Abril Fatface (영문)', cat: 'latin', weights: [400] },
@@ -938,7 +938,7 @@ var LabelCore = (function () {
     { family: 'Pacifico', label: 'Pacifico (영문)', cat: 'latin', weights: [400] },
     { family: 'Caveat', label: 'Caveat (영문)', cat: 'latin', variable: '400..700' },
     { family: 'Lobster', label: 'Lobster (영문)', cat: 'latin', weights: [400] },
-    { family: 'Roboto Mono', label: 'Roboto Mono (영문)', cat: 'latin', variable: '100..700' }
+    { family: 'Roboto Mono', label: 'Roboto Mono (영문)', cat: 'latin', variable: '100..700', italic: true }
   ];
 
   var FONT_CATS = { sans: '고딕', serif: '명조', display: '제목용', hand: '손글씨', latin: '영문', custom: '내 글꼴' };
@@ -977,6 +977,8 @@ var LabelCore = (function () {
   }
   function googleSpec(info) {
     var name = info.family.replace(/ /g, '+');
+    // 기울임꼴이 있는 가변 글꼴은 진짜 이탤릭도 함께 불러옴
+    if (info.variable && info.italic) return name + ':ital,wght@0,' + info.variable + ';1,' + info.variable;
     if (info.variable) return name + ':wght@' + info.variable;
     if (info.weights.length === 1 && info.weights[0] === 400) return name;
     return name + ':wght@' + info.weights.join(';');
