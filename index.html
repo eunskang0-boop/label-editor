@@ -2213,7 +2213,7 @@ var LabelCore = (function () {
       // 고객이 고를 수 있는 추가 라벨지 (PREMIUM 1개 포함, 그 밖에는 "라벨지 규격 추가" 옵션)
       d.extraSheets = Array.isArray(d.extraSheets) ? d.extraSheets.filter(Boolean) : (d.altSheetId ? [d.altSheetId] : []);
       delete d.altSheetId;
-      d.presets = Array.isArray(d.presets) ? d.presets : []; // 납품 품목 [{ id, name, values }]
+      d.presets = Array.isArray(d.presets) ? d.presets : []; // 납품 품목 [{ id, name, values, count? (처음 수량) }]
       d.bleed = num(d.bleed, 0);
     });
     return p;
@@ -2688,7 +2688,9 @@ var LabelCustomer = (function () {
     var s = { v: 1, projectId: P.id, items: [], shared: {}, cur: {}, print: {}, assets: {} };
     P.designs.forEach(function (d) {
       var sh = C.designSheet(d);
-      presetItems(d).forEach(function (it, i) { if (i === 0) it.count = sh.cols * sh.rows; s.items.push(it); });
+      // 처음 수량: 판매자가 품목별로 정해 둔 수량, 없으면 첫 품목으로 한 장 채우기
+      var list = presetItems(d), preset = list.some(function (it) { return it.count > 0; });
+      list.forEach(function (it, i) { if (!preset && i === 0) it.count = sh.cols * sh.rows; s.items.push(it); });
       s.cur[d.id] = itemsOf(d, s)[0].id;
     });
     return s;
@@ -2697,7 +2699,7 @@ var LabelCustomer = (function () {
   function presetItems(d) {
     var list = d.presets && d.presets.length ? d.presets : [{ id: 'base', name: '', values: {} }];
     return list.map(function (pr) {
-      return { id: !F.items ? 'pre_' + d.id + '_' + pr.id : C.uid('i'), designId: d.id, name: pr.name || '', values: C.clone(pr.values || {}), count: 0 };
+      return { id: !F.items ? 'pre_' + d.id + '_' + pr.id : C.uid('i'), designId: d.id, name: pr.name || '', values: C.clone(pr.values || {}), count: Math.max(0, Math.round(C.num(pr.count, 0))) };
     });
   }
   // DELUXE: 품목은 항상 납품 품목. 잠긴 칸(상품명·부제·원재료 등)은 저장값이 아니라 라벨 파일에서 읽고,
@@ -2815,6 +2817,7 @@ var LabelCustomer = (function () {
     st = fixState(saved && saved.items ? saved : freshState());
     buildShell();
     renderAll();
+    save(); // 처음 열 때부터 저장 상태 표시 (상세페이지 화면과 같게: "입력 내용 자동 저장됨")
     C.onFontsChange(function () { renderPreview(); renderSheet(); });
     checkFonts();
     document.addEventListener('keydown', function (e) {
