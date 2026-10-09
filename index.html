@@ -340,6 +340,7 @@ ol.steps li { margin: 4px 0; }
 .c-imp-table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
 .c-imp-table th, .c-imp-table td { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
 .c-imp-table th { background: var(--panel-2); position: sticky; top: 0; }
+.c-feat-list li small { margin-left: 2px; font-size: 10.5px; font-weight: 700; color: #8a6a26; background: #f6ecd6; border-radius: 999px; padding: 1px 6px; }
 </style>
 </head>
 <body>
@@ -1216,7 +1217,7 @@ var LabelCore = (function () {
     var size = num(el.size, 12);
     var r = attempt(size);
     if (!r.fits && el.autoFit) {
-      var lo = Math.min(num(el.minSize, 5), size), hi = size, best = null;
+      var lo = Math.min(Math.max(num(el.minSize, 5), size * 0.5), size), hi = size, best = null;
       var low = attempt(lo);
       if (low.fits) {
         best = low;
@@ -1376,6 +1377,58 @@ var LabelCore = (function () {
   ];
   function planOf(p) { return p && p.meta && p.meta.plan === 'deluxe' ? 'deluxe' : 'premium'; }
   function planTools(plan) { return TOOLS.filter(function (t) { return plan === 'premium' || !t.premium; }); }
+  // DELUXE에 옵션으로 더할 수 있는 도구 (사업 계획서의 추가 옵션)
+  var ADDONS = [
+    { key: 'excel', no: 9, name: '엑셀 파일 불러오기', price: '29,000원' },
+    { key: 'expiry', no: 10, name: '유통기한 자동 계산', price: '19,000원' },
+    { key: 'qr', no: 11, name: 'QR코드 생성', price: '19,000원' },
+    { key: 'pdf', no: 12, name: '고해상도 PDF 저장', price: '15,000원' }
+  ];
+  // 이 파일에 들어가는 기능: PREMIUM은 전부, DELUXE는 기본 8가지 + 구매한 옵션
+  function features(p) {
+    var prem = planOf(p) === 'premium', ad = (p && p.meta && p.meta.addons) || {};
+    var f = { plan: prem ? 'premium' : 'deluxe', allText: prem, items: prem };
+    ADDONS.forEach(function (a) { f[a.key] = prem || !!ad[a.key]; });
+    return f;
+  }
+  function toolsFor(p) {
+    var f = features(p);
+    return TOOLS.filter(function (t) {
+      if (!t.premium) return true;
+      var a = ADDONS.filter(function (x) { return x.no === t.no; })[0];
+      return a && f[a.key];
+    }).map(function (t) { return { no: t.no, name: t.name, option: !!t.premium && f.plan === 'deluxe' }; });
+  }
+  // 패키지 점검: 사업 계획서의 패키지 구성과 비교 → [{ kind: 'ok'|'opt'|'warn', text }]
+  function packageReport(p) {
+    var plan = planOf(p), f = features(p), out = [];
+    var add = function (kind, text) { out.push({ kind: kind, text: text }); };
+    var nd = p.designs.length, needD = plan === 'premium' ? 3 : 1, pn = plan === 'premium' ? 'PREMIUM은' : 'DELUXE는';
+    if (nd === needD) add('ok', '디자인 ' + nd + '종');
+    else if (nd > needD) add('opt', '디자인 ' + nd + '종 — 디자인 추가 옵션 ' + (nd - needD) + '종 (65,000원/종)');
+    else add('warn', '디자인 ' + nd + '종 — ' + pn + ' ' + needD + '종이에요');
+    // 라벨지 규격: 주문 전체에서 쓰는 칼선 라벨지 종류 수 (전지 스티커 용지 자동 배치는 세지 않음)
+    var specs = {};
+    p.designs.forEach(function (d) {
+      var np = (d.presets || []).length;
+      if (plan === 'deluxe') {
+        if (np === 2) add('ok', d.name + ': 납품 품목 2개');
+        else if (np > 2) add('opt', d.name + ': 납품 품목 ' + np + '개 — 품목 추가 옵션 ' + (np - 2) + '개 (29,000원/개)');
+        else add('warn', d.name + ': 납품 품목 ' + np + '개 — DELUXE는 2개를 정하세요 (설정 → 납품 품목)');
+      } else add('ok', d.name + ': 품목 무제한' + (np ? ' (처음 품목 ' + np + '개)' : ''));
+      if (d.sheetId !== 'auto') specs[d.sheetId === 'custom' ? 'custom:' + d.id : d.sheetId] = 1;
+      extraSheetList(d).forEach(function (x) { specs[typeof x.id === 'string' && findSheet(x.id) ? x.id : 'x:' + x.id] = 1; });
+    });
+    var ns = Object.keys(specs).length, freeS = plan === 'premium' ? 2 : 1;
+    if (ns > freeS) add('opt', '라벨지 규격 ' + ns + '개 — 규격 추가 옵션 ' + (ns - freeS) + '개 (포함 ' + freeS + '개)');
+    else add('ok', '라벨지 규격 ' + ns + '개 (포함 ' + freeS + '개)');
+    if (plan === 'deluxe') ADDONS.forEach(function (a) { if (f[a.key]) add('opt', a.name + ' (' + a.price + ')'); });
+    if (f.excel) add('ok', '엑셀 양식(라벨_품목_양식.xlsx)도 함께 보내세요');
+    if (plan === 'premium') add('ok', '사용법 영상도 함께 보내세요');
+    return out;
+  }
+  // 고객 편집기 화면 색 — 디자인과 상관없이 항상 같음 (상세페이지 화면과 동일)
+  var EDITOR_ACCENT = '#24392e';
   // DELUXE에서도 고객이 고칠 수 있는 칸인지 — 날짜·용량처럼 자주 바뀌는 정보. 상품명·부제·원재료는 납품 때 고정
   var DELUXE_HINT = /용량|중량|내용량|무게|수량|개입|LOT|로트|제조|생산|유통|소비|사용기한|기한|날짜|일자|로스팅/i;
   function deluxeEditable(el) {
@@ -2090,14 +2143,14 @@ var LabelCore = (function () {
     return {
       id: uid('d'), name: name || '디자인 1',
       label: { w: ls.w, h: ls.h, shape: ls.shape || 'rect', radius: ls.radius || 2, bg: '#ffffff' },
-      sheetId: ls.sheetId || 'a4-21', altSheetId: '', customSheet: null, bleed: 0,
+      sheetId: ls.sheetId || 'a4-21', extraSheets: [], customSheet: null, bleed: 0,
       elements: [], presets: []
     };
   }
   function newProject() {
     return {
       app: APP, version: VERSION, id: uid('p'),
-      meta: { title: '새 라벨', seller: '', note: '', accent: '#3b5bdb', plan: 'premium' },
+      meta: { title: '새 라벨', seller: '', note: '', accent: EDITOR_ACCENT, plan: 'premium', addons: { excel: false, expiry: false, qr: false, pdf: false } },
       designs: [newDesign('디자인 1')],
       assets: {}, fonts: []
     };
@@ -2142,8 +2195,9 @@ var LabelCore = (function () {
     p.app = APP;
     p.version = p.version || VERSION;
     p.id = p.id || uid('p');
-    p.meta = Object.assign({ title: '라벨', seller: '', note: '', accent: '#3b5bdb', webUrl: '', plan: 'premium' }, p.meta || {});
+    p.meta = Object.assign({ title: '라벨', seller: '', note: '', accent: EDITOR_ACCENT, webUrl: '', plan: 'premium' }, p.meta || {});
     if (p.meta.plan !== 'deluxe') p.meta.plan = 'premium';
+    p.meta.addons = Object.assign({ excel: false, expiry: false, qr: false, pdf: false }, p.meta.addons || {});
     p.assets = p.assets || {};
     p.fonts = p.fonts || [];
     p.designs.forEach(function (d) {
@@ -2156,7 +2210,9 @@ var LabelCore = (function () {
         return base;
       });
       if (d.sheetId == null) d.sheetId = 'a4-21';
-      d.altSheetId = d.altSheetId || ''; // PREMIUM: 고객이 고를 수 있는 두 번째 라벨지
+      // 고객이 고를 수 있는 추가 라벨지 (PREMIUM 1개 포함, 그 밖에는 "라벨지 규격 추가" 옵션)
+      d.extraSheets = Array.isArray(d.extraSheets) ? d.extraSheets.filter(Boolean) : (d.altSheetId ? [d.altSheetId] : []);
+      delete d.altSheetId;
       d.presets = Array.isArray(d.presets) ? d.presets : []; // 납품 품목 [{ id, name, values }]
       d.bleed = num(d.bleed, 0);
     });
@@ -2178,6 +2234,17 @@ var LabelCore = (function () {
     var id = uid('a');
     p.assets[id] = src;
     return id;
+  }
+  // 추가 라벨지: 목록에 있는 규격 ID 또는 직접 입력한 규격 { id, name, pageW, pageH, cols, rows, top, left, px, py }
+  function extraSheetList(design) {
+    var L = design.label, out = [];
+    (design.extraSheets || []).forEach(function (ref) {
+      var s = null;
+      if (typeof ref === 'string') { s = findSheet(ref); if (s && !sheetMatches(s, L)) s = null; }
+      else if (ref && ref.id && ref.cols > 0 && ref.rows > 0) s = Object.assign({ pageW: 210, pageH: 297 }, clone(ref), { w: L.w, h: L.h });
+      if (s && s.id !== design.sheetId && !out.some(function (x) { return x.id === s.id; })) out.push(s);
+    });
+    return out;
   }
   function designSheet(design) {
     if (design.sheetId === 'auto') return autoSheet(design.label, design.autoSheet || {});
@@ -2235,9 +2302,59 @@ var LabelCore = (function () {
       (fontsURL ? '<link rel="preconnect" href="https://fonts.googleapis.com">\n<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>\n<link rel="stylesheet" href="' + esc(fontsURL) + '">\n' : '') +
       '<style id="css-core">' + src.cssCore + '</style>\n<style id="css-customer">' + src.cssCustomer + '</style>\n</head>\n<body>\n<div id="app">' + noScriptNotice('customer', p && p.meta.webUrl) + '</div>\n' +
       '<script type="application/json" id="label-data">' + data + close + '\n' +
-      (src.xlsx && (!p || planOf(p) === 'premium') ? '<script>' + src.xlsx + close + '\n' : '') + // PREMIUM: 엑셀 불러오기
+      (src.xlsx && (!p || features(p).excel) ? '<script>' + src.xlsx + close + '\n' : '') + // PREMIUM·엑셀 옵션: 엑셀 불러오기
       '<script>' + src.codes + close + '\n<script>' + src.core + close + '\n<script>' + src.ui + close + '\n<script>' + src.customer + close + '\n' +
       '<script>LabelCustomer.boot(JSON.parse(document.getElementById("label-data").textContent));' + close + '\n</body>\n</html>\n';
+  }
+
+  // ───────────────────────── 엑셀 양식 ─────────────────────────
+  // 같은 뜻의 제목(별칭). 맨 앞 이름이 양식에 쓰는 이름 (기능 명세: 상품명, 부제, 용량, 제조일, 유통기간(개월), 원재료, 수량, QR 링크)
+  var FIELD_ALIASES = [
+    ['상품명', '제품명', '품명', '상품', '제품', '이름', '품목', '품목명', '메뉴', '메뉴명'],
+    ['부제', '부제목', '영문', '영문명', '영문이름', '영문표기', '서브', '설명'],
+    ['용량', '내용량', '중량', '무게', '양'],
+    ['제조일', '제조일자', '만든날', '생산일', '생산일자', '로스팅일', '로스팅날짜'],
+    ['원재료', '원재료명', '성분', '전성분', '재료', '원료'],
+    ['QR 링크', 'qr링크', 'qr', 'qr코드', 'qr주소', '링크', 'url', '주소', '스토어주소'],
+    ['바코드', '바코드번호', 'ean'],
+    ['LOT', 'lot번호', '로트', '로트번호']
+  ];
+  function normKey(t) { return String(t == null ? '' : t).toLowerCase().replace(/\(.*?\)|\[.*?\]/g, '').replace(/[\s·._\-:\/]/g, ''); }
+  function aliasGroup(k) {
+    for (var i = 0; i < FIELD_ALIASES.length; i++) if (FIELD_ALIASES[i].some(function (a) { return normKey(a) === k; })) return i;
+    return -1;
+  }
+  function fieldGroup(el) { var g = aliasGroup(normKey((el.customer || {}).label)); return g >= 0 ? g : aliasGroup(normKey(el.name)); }
+  // 엑셀로 넣을 수 있는 칸
+  function importFields(design) {
+    return editableFields(design).filter(function (el) { return el.customer.editable && (el.type === 'text' || el.type === 'qr' || el.type === 'barcode'); });
+  }
+  // 양식 표: [제목 줄, 품목 줄...]. items: [{ values, count }]
+  function templateTable(design, items) {
+    var unit = function (el) { return { day: '일', month: '개월', year: '년' }[el.customer.unit] || '일'; };
+    var used = {}, cols = importFields(design).map(function (el) {
+      var c = el.customer, g = c.input === 'dateCalc' ? -1 : fieldGroup(el), title;
+      if (c.input === 'dateCalc') title = '유통기간(' + unit(el) + ')';
+      else if (g >= 0 && !used[g]) { used[g] = 1; title = FIELD_ALIASES[g][0]; }
+      else title = c.label || el.name;
+      var rank = c.input === 'dateCalc' ? 4 : ({ 0: 1, 1: 2, 2: 3, 3: 4, 4: 6, 5: 9 }[g] || 7);
+      if (c.input === 'dateCalc') rank = 5;
+      return { el: el, title: title, rank: rank };
+    });
+    cols.push({ count: true, title: '수량', rank: 8 });
+    cols.sort(function (a, b) { return a.rank - b.rank; });
+    var rows = [cols.map(function (c) { return c.title; })];
+    (items && items.length ? items : [{ values: {}, count: 0 }]).forEach(function (it) {
+      var v = it.values || {};
+      rows.push(cols.map(function (c) {
+        if (c.count) return it.count || 0;
+        var el = c.el, s = v[el.id] || {};
+        if (el.customer.input === 'dateCalc') return s.offset != null ? s.offset : el.customer.offset;
+        if (el.customer.input === 'date') { var today = s.today != null ? s.today : el.customer.today; return today ? '' : dateISOFor(design, el, v); }
+        return rawText(design, el, v);
+      }));
+    });
+    return rows;
   }
 
   // 고객 편집 항목 목록 (입력 폼 순서)
@@ -2264,11 +2381,13 @@ var LabelCore = (function () {
     DATE_FORMATS: DATE_FORMATS, todayISO: todayISO, formatDate: formatDate, addDate: addDate, parseISO: parseISO, formatNumber: formatNumber,
     rawText: rawText, displayText: displayText, isVisible: isVisible, colorKey: colorKey, colorOf: colorOf, findEl: findEl, dateISOFor: dateISOFor,
     effEl: effEl, layoutRange: layoutRange, LAYOUT_KEYS: LAYOUT_KEYS,
-    PLANS: PLANS, TOOLS: TOOLS, planOf: planOf, planTools: planTools, deluxeEditable: deluxeEditable, sheetPDF: sheetPDF,
+    PLANS: PLANS, TOOLS: TOOLS, ADDONS: ADDONS, planOf: planOf, planTools: planTools, features: features, toolsFor: toolsFor, EDITOR_ACCENT: EDITOR_ACCENT, packageReport: packageReport,
+    deluxeEditable: deluxeEditable, sheetPDF: sheetPDF,
+    FIELD_ALIASES: FIELD_ALIASES, normKey: normKey, aliasGroup: aliasGroup, importFields: importFields, templateTable: templateTable,
     qrModules: qrModules, eanData: eanData,
     labelSVG: labelSVG, labelShapeSVG: labelShapeSVG, labelCanvas: labelCanvas, loadImage: loadImage,
     SHEETS: SHEETS, PAGE_SIZES: PAGE_SIZES, findSheet: findSheet, autoSheet: autoSheet, sheetMatches: sheetMatches, cells: cells,
-    effectiveBleed: effectiveBleed, sheetIssues: sheetIssues, designSheet: designSheet,
+    effectiveBleed: effectiveBleed, sheetIssues: sheetIssues, designSheet: designSheet, extraSheetList: extraSheetList,
     buildPrintPages: buildPrintPages, printPages: printPages, svgPage: svgPage,
     store: store, getPref: getPref, setPref: setPref,
     download: download, readFile: readFile, pickFile: pickFile, importImage: importImage, safeName: safeName,
@@ -2553,9 +2672,9 @@ var LabelCustomer = (function () {
   var di = 0;     // 현재 디자인
   var report = {};
   var PLAN = 'premium'; // 'deluxe'(기본 도구 8가지) | 'premium'(전체 도구 12가지) — 라벨 파일에 판매자가 정해 둠
+  var F = {}; // 이 파일에 들어간 기능 (C.features): allText, items, excel, expiry, qr, pdf
   var LOCK_NOTE = '납품 때 정해진 항목이에요. 바꾸려면 PREMIUM이 필요해요.';
   var SEL = null; // 미리보기에서 고른 글자 (위치·크기 조절)
-  function premium() { return PLAN === 'premium'; }
 
   function design() { return P.designs[di]; }
   function storeKey() { return 'customer:' + P.id; }
@@ -2578,7 +2697,7 @@ var LabelCustomer = (function () {
   function presetItems(d) {
     var list = d.presets && d.presets.length ? d.presets : [{ id: 'base', name: '', values: {} }];
     return list.map(function (pr) {
-      return { id: PLAN === 'deluxe' ? 'pre_' + d.id + '_' + pr.id : C.uid('i'), designId: d.id, name: pr.name || '', values: C.clone(pr.values || {}), count: 0 };
+      return { id: !F.items ? 'pre_' + d.id + '_' + pr.id : C.uid('i'), designId: d.id, name: pr.name || '', values: C.clone(pr.values || {}), count: 0 };
     });
   }
   // DELUXE: 품목은 항상 납품 품목. 잠긴 칸(상품명·부제·원재료 등)은 저장값이 아니라 라벨 파일에서 읽고,
@@ -2606,7 +2725,7 @@ var LabelCustomer = (function () {
   function fixState(s) {
     s.items = (s.items || []).filter(function (it) { return P.designs.some(function (d) { return d.id === it.designId; }); });
     s.shared = s.shared || {}; s.cur = s.cur || {}; s.print = s.print || {}; s.assets = s.assets || {};
-    if (PLAN === 'deluxe') lockItems(s);
+    if (!F.items) lockItems(s);
     P.designs.forEach(function (d) {
       if (!itemsOf(d, s).length) { var sh = C.designSheet(d); var it = newItem(d, '', sh.cols * sh.rows); s.items.push(it); }
       if (!s.items.some(function (it) { return it.id === s.cur[d.id]; })) s.cur[d.id] = itemsOf(d, s)[0].id;
@@ -2646,23 +2765,18 @@ var LabelCustomer = (function () {
     C.store.set(storeKey(), st).then(function (ok) { if (R.saved) R.saved.textContent = ok ? '입력 내용 자동 저장됨' : '자동 저장 안 됨 — "백업"으로 파일 저장하세요'; });
   }, 500);
 
-  // 고객이 쓸 수 있는 라벨지: 판매자가 정한 기본 라벨지 (+ PREMIUM은 추가 라벨지 1개)
+  // 고객이 쓸 수 있는 라벨지: 판매자가 정한 기본 라벨지 + 추가 라벨지 (PREMIUM 1개 포함, 그 밖에는 규격 추가 옵션)
   function allowedSheets(d) {
-    var ids = [d.sheetId];
-    if (premium() && d.altSheetId && d.altSheetId !== d.sheetId) {
-      var a = C.findSheet(d.altSheetId);
-      if (a && C.sheetMatches(a, d.label)) ids.push(d.altSheetId);
-    }
-    return ids;
+    return [d.sheetId].concat(C.extraSheetList(d).map(function (s) { return s.id; }));
   }
   function sheetLabel(d, id) {
     if (id === d.sheetId) {
       var s0 = C.designSheet(d);
       if (id === 'auto') return '스티커 용지에 자동 배치 (' + s0.cols * s0.rows + '칸)';
-      if (id === 'custom') return '판매자 지정 라벨지 (' + s0.cols * s0.rows + '칸)';
+      if (id === 'custom') return (d.customSheet && d.customSheet.label) || '판매자 지정 라벨지 (' + s0.cols * s0.rows + '칸)';
     }
-    var s = C.findSheet(id);
-    return s ? s.name : id;
+    var x = C.extraSheetList(d).filter(function (s) { return s.id === id; })[0] || C.findSheet(id);
+    return x ? (x.name || id) + (x.cols ? ' · ' + x.cols * x.rows + '칸' : '') : id;
   }
   function printCfg(d) {
     var c = st.print[d.id];
@@ -2673,8 +2787,8 @@ var LabelCustomer = (function () {
   function currentSheet(d) {
     var c = printCfg(d);
     if (c.sheetId !== d.sheetId) {
-      var s = C.findSheet(c.sheetId);
-      if (s && C.sheetMatches(s, d.label)) return s;
+      var s = C.extraSheetList(d).filter(function (x) { return x.id === c.sheetId; })[0];
+      if (s) return s;
     }
     return C.designSheet(d);
   }
@@ -2683,6 +2797,7 @@ var LabelCustomer = (function () {
   var webMode = false; // 파일을 직접 여는 웹 페이지로 쓰는 중인지
 
   async function boot(project) {
+    setTheme();
     if (!project) { webMode = true; return bootOpener(); }
     return start(project);
   }
@@ -2690,9 +2805,9 @@ var LabelCustomer = (function () {
     try { P = C.normalizeProject(project); }
     catch (e) { showError('라벨 데이터를 읽을 수 없습니다. 판매자에게 문의하세요.'); return; }
     PLAN = C.planOf(P);
-    P.designs = P.designs.map(PLAN === 'deluxe' ? deluxeView : premiumView);
-    document.documentElement.style.setProperty('--accent', P.meta.accent || '#3b5bdb');
-    document.documentElement.style.setProperty('--accent-soft', 'color-mix(in srgb, ' + (P.meta.accent || '#3b5bdb') + ' 10%, #fff)');
+    F = C.features(P);
+    P.designs = P.designs.map(planView);
+    setTheme();
     document.title = (P.meta.title || '라벨') + ' 라벨 편집기';
     C.registerCustomFonts(P);
     C.ensureFonts(C.usedFonts(P));
@@ -2706,23 +2821,29 @@ var LabelCustomer = (function () {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'p') { e.preventDefault(); doPrint(); }
     });
   }
-  // DELUXE: 상품명·부제·원재료처럼 납품 때 정한 칸은 잠그고, QR은 넣지 않고,
-  // 유통기한은 자동 계산 대신 고객이 날짜를 직접 넣어요 (비우면 표시 안 함)
-  function deluxeView(d) {
+  // 편집기 화면 색은 디자인과 상관없이 항상 같음 (상세페이지에 나온 화면과 동일)
+  function setTheme() {
+    var a = C.EDITOR_ACCENT, root = document.documentElement.style;
+    root.setProperty('--accent', a);
+    root.setProperty('--accent-ink', '#ffffff');
+    root.setProperty('--accent-soft', 'color-mix(in srgb, ' + a + ' 10%, #fff)');
+  }
+  // 패키지에 맞게 고객 화면용 디자인을 바꿈
+  // DELUXE: 상품명·부제·원재료처럼 납품 때 정한 칸은 잠금. QR은 (QR 옵션이 없으면) 넣지 않고,
+  // 유통기한은 (자동 계산 옵션이 없으면) 고객이 날짜를 직접 넣어요 (비우면 표시 안 함)
+  // QR이 있으면 켜고 끌 수 있게
+  function planView(d) {
     d = C.clone(d);
     d.elements.forEach(function (el) {
       var c = el.customer;
-      var open = C.deluxeEditable(el);
-      if (el.type === 'qr' && c.editable) { el.hidden = true; return; }
-      if (el.type === 'text' && c.input === 'dateCalc') { c.input = 'date'; c.today = false; c.directExpiry = true; el.text = ''; open = true; }
-      c.locked = !open;
+      var open = F.allText || C.deluxeEditable(el);
+      if (el.type === 'qr' && c.editable) {
+        if (!F.qr) { el.hidden = true; return; }
+        c.toggle = true; open = true;
+      }
+      if (el.type === 'text' && c.input === 'dateCalc' && !F.expiry) { c.input = 'date'; c.today = false; c.directExpiry = true; el.text = ''; open = true; }
+      if (!F.allText) c.locked = !open;
     });
-    return d;
-  }
-  // PREMIUM: 고객이 바꾸는 QR은 켜고 끌 수 있게
-  function premiumView(d) {
-    d = C.clone(d);
-    d.elements.forEach(function (el) { if (el.type === 'qr' && el.customer.editable) el.customer.toggle = true; });
     return d;
   }
   function showError(msg) {
@@ -2841,9 +2962,9 @@ var LabelCustomer = (function () {
       R.designTabs,
       P.meta.note ? h('div', { class: 'callout c-note' }, icon('info', 16), h('span', { class: 'pre', text: P.meta.note })) : null,
       h('div', { class: 'c-card' }, h('div', { class: 'c-card-head' }, h('h2', {}, h('span', { class: 'step', text: '1' }), '품목 고르기'),
-        premium() ? h('div', { class: 'row c-item-tools' },
-          btn('엑셀', { icon: 'upload', small: true, kind: 'ghost', title: '엑셀 파일로 품목 불러오기', class: 'c-import-btn', onClick: importDialog }),
-          btn('품목 추가', { icon: 'plus', small: true, kind: 'soft', onClick: addItem })) : (R.planBadge = h('span', { class: 'badge c-plan-badge' }))), R.items),
+        h('div', { class: 'row c-item-tools' },
+          F.excel ? btn('엑셀', { icon: 'upload', small: true, kind: 'ghost', title: '엑셀 파일로 품목 불러오기', class: 'c-import-btn', onClick: importDialog }) : null,
+          F.items ? btn('품목 추가', { icon: 'plus', small: true, kind: 'soft', onClick: addItem }) : (R.planBadge = h('span', { class: 'badge c-plan-badge' })))), R.items),
       h('div', { class: 'c-card' }, h('div', { class: 'c-card-head' }, h('h2', {}, h('span', { class: 'step', text: '2' }), '내용 입력')), R.form)
     );
     var preview = h('section', { class: 'c-col c-preview', 'aria-label': '미리보기' },
@@ -2852,7 +2973,7 @@ var LabelCustomer = (function () {
         R.preview, R.moveBar = h('div', { class: 'c-move' }), R.previewNote,
         h('div', { class: 'row c-png' },
           btn('이미지(PNG)로 저장', { icon: 'image', small: true, onClick: function () { savePNG(300); } }),
-          premium() ? btn('고해상도', { small: true, kind: 'ghost', title: '600dpi PNG', onClick: function () { savePNG(600); } }) : null
+          F.pdf ? btn('고해상도', { small: true, kind: 'ghost', title: '600dpi PNG', onClick: function () { savePNG(600); } }) : null
         )
       )
     );
@@ -2867,15 +2988,15 @@ var LabelCustomer = (function () {
       P.meta.seller ? h('span', { text: '제작: ' + P.meta.seller }) : null,
       h('span', { class: 'muted', text: '라벨 수정·인쇄 도구 · 편집기 파일의 수정·재배포 금지' })));
     bindPreview();
-    if (premium()) bindFileDrop(app);
+    if (F.excel) bindFileDrop(app);
   }
   // 이 파일에 들어 있는 기능 (패키지별)
   function featureCard() {
-    var info = C.PLANS[PLAN];
+    var info = C.PLANS[PLAN], tools = C.toolsFor(P), opts = tools.filter(function (t) { return t.option; }).length;
     var list = h('ul', { class: 'c-feat-list' });
-    C.planTools(PLAN).forEach(function (t) { list.appendChild(h('li', { class: t.premium ? 'pre' : '' }, icon('check', 14), h('span', { text: t.name }))); });
+    tools.forEach(function (t) { list.appendChild(h('li', { class: t.option ? 'opt' : '' }, icon('check', 14), h('span', { text: t.name }), t.option ? h('small', { text: '옵션' }) : null)); });
     return h('div', { class: 'c-card c-feat' },
-      h('div', { class: 'c-feat-head' }, h('b', { text: info.name }), h('span', { class: 'muted small', text: info.tools })), list);
+      h('div', { class: 'c-feat-head' }, h('b', { text: info.name }), h('span', { class: 'muted small', text: info.tools + (opts ? ' + 옵션 ' + opts + '가지' : '') })), list);
   }
 
   function renderAll() {
@@ -2909,14 +3030,14 @@ var LabelCustomer = (function () {
         h('button', { type: 'button', class: 'c-item-main', onclick: function () { st.cur[d.id] = it.id; SEL = null; save(); renderAll(); } },
           h('span', { class: 'c-item-thumb', html: thumbSVG(d, it) }),
           h('span', { class: 'c-item-name', text: itemName(it, i) })),
-        on && premium() ? h('div', { class: 'c-item-acts' },
+        on && F.items ? h('div', { class: 'c-item-acts' },
           btn('', { icon: 'edit', small: true, kind: 'ghost', title: '이름 바꾸기', onClick: function () { renameItem(it, i); } }),
           btn('', { icon: 'copy', small: true, kind: 'ghost', title: '복제', onClick: function () { dupItem(it); } }),
           list.length > 1 ? btn('', { icon: 'trash', small: true, kind: 'ghost', title: '삭제', onClick: function () { delItem(it); } }) : null) : null
       );
       R.items.appendChild(chip);
     });
-    if (!premium()) R.items.appendChild(h('p', { class: 'muted small c-item-hint', text: '납품 때 정한 품목이에요. 품목을 늘리려면 품목 추가 옵션이나 PREMIUM이 필요해요.' }));
+    if (!F.items) R.items.appendChild(h('p', { class: 'muted small c-item-hint', text: '납품 때 정한 품목이에요. 품목을 늘리려면 품목 추가 옵션이나 PREMIUM이 필요해요.' }));
     else if (list.length === 1) R.items.appendChild(h('p', { class: 'muted small c-item-hint', text: '맛·종류가 여러 개면 "품목 추가"로 각각 만들거나 엑셀로 한 번에 불러오고, 한 장에 섞어서 인쇄할 수 있어요.' }));
   }
   function thumbSVG(d, it) {
@@ -3190,7 +3311,7 @@ var LabelCustomer = (function () {
   function movableEl(d, id) {
     var el = id ? C.findEl(d, id) : null;
     if (!el || el.hidden || !el.customer.editable) return null;
-    return el.type === 'text' || (el.type === 'qr' && premium()) ? el : null;
+    return el.type === 'text' || (el.type === 'qr' && F.qr) ? el : null;
   }
   function layoutSlot(el) { return slotFor(curItem(), el); }
   function setLayout(el, dx, dy, k) {
@@ -3208,7 +3329,7 @@ var LabelCustomer = (function () {
     if (!el) { SEL = null; return ''; }
     var e = C.effEl(el, valuesOf(item));
     return '<rect class="c-sel" x="' + C.f(e.x - 0.4) + '" y="' + C.f(e.y - 0.4) + '" width="' + C.f(e.w + 0.8) + '" height="' + C.f(e.h + 0.8) + '" rx="0.6" fill="none" stroke="' +
-      C.esc(P.meta.accent || '#3b5bdb') + '" stroke-width="1.6" stroke-dasharray="5 3" vector-effect="non-scaling-stroke" pointer-events="none"/>';
+      C.esc(C.EDITOR_ACCENT) + '" stroke-width="1.6" stroke-dasharray="5 3" vector-effect="non-scaling-stroke" pointer-events="none"/>';
   }
   function svgPoint(e) {
     var svg = R.preview.querySelector('svg');
@@ -3393,7 +3514,7 @@ var LabelCustomer = (function () {
 
     R.printBtn = btn('인쇄하기', { icon: 'print', kind: 'primary', class: 'btn-lg btn-block', onClick: doPrint });
     R.print.appendChild(R.printBtn);
-    if (premium()) {
+    if (F.pdf) {
       R.pdfBtn = btn('PDF로 저장 (인쇄소용 고해상도)', { icon: 'download', class: 'btn-block c-pdf-btn', onClick: savePDF });
       R.print.appendChild(R.pdfBtn);
       R.print.appendChild(h('div', { class: 'row c-print-more' },
@@ -3435,7 +3556,7 @@ var LabelCustomer = (function () {
       var skipped = c.i < start;
       var isStart = c.i === start;
       overlay += '<g class="cell' + (skipped ? ' skipped' : '') + (isStart ? ' start' : '') + '" data-cell="' + c.i + '" transform="translate(' + C.f(c.x) + ' ' + C.f(c.y) + ')">' +
-        C.labelShapeSVG(L, 0, 0, 'fill="' + (skipped ? 'url(#hatch)' : '#000') + '" fill-opacity="' + (skipped ? '1' : '0') + '" stroke="' + (isStart ? C.esc(P.meta.accent || '#3b5bdb') : '#adb5bd') + '" stroke-width="' + (isStart ? 0.9 : 0.25) + '"' + (isStart ? '' : ' stroke-dasharray="1.2 0.8"')) +
+        C.labelShapeSVG(L, 0, 0, 'fill="' + (skipped ? 'url(#hatch)' : '#000') + '" fill-opacity="' + (skipped ? '1' : '0') + '" stroke="' + (isStart ? C.esc(C.EDITOR_ACCENT) : '#adb5bd') + '" stroke-width="' + (isStart ? 0.9 : 0.25) + '"' + (isStart ? '' : ' stroke-dasharray="1.2 0.8"')) +
         (skipped ? '<text x="' + C.f(L.w / 2) + '" y="' + C.f(L.h / 2 + usedFs * 0.35) + '" font-size="' + C.f(usedFs) + '" text-anchor="middle" fill="#868e96" font-family="sans-serif">사용한 칸</text>' : '') +
         '<title>' + (c.i + 1) + '번 칸' + (skipped ? ' (사용한 칸 — 인쇄하지 않아요)' : '') + '</title></g>';
     });
@@ -3547,7 +3668,7 @@ var LabelCustomer = (function () {
   function helpDialog() {
     U.modal({ title: '사용법', wide: true, body: [
       h('ol', { class: 'steps' },
-        h('li', {}, h('b', { text: '품목 고르기' }), premium() ? ' — 맛·종류별로 품목을 만들거나 엑셀로 한 번에 불러오면 다음에도 그대로 남아 있어요.' : ' — 납품 때 정한 품목 중에서 골라요.'),
+        h('li', {}, h('b', { text: '품목 고르기' }), F.items ? ' — 맛·종류별로 품목을 만들거나 엑셀로 한 번에 불러오면 다음에도 그대로 남아 있어요.' : ' — 납품 때 정한 품목 중에서 골라요.'),
         h('li', {}, h('b', { text: '내용 입력' }), ' — 왼쪽 칸에 입력하면 가운데 미리보기에 바로 반영돼요. 로고·배경·색·글꼴은 그대로 유지돼요.'),
         h('li', {}, h('b', { text: '위치·크기' }), ' — 미리보기에서 글자를 눌러 끌면 옮겨지고, 아래 막대로 크기를 바꿔요. 방향키 0.2mm, Shift+방향키 1mm.'),
         h('li', {}, h('b', { text: '수량·시작 칸' }), ' — 품목별 수량을 넣고, 쓰다 남은 라벨지면 시작 칸을 눌러 고르세요.'),
@@ -3560,23 +3681,10 @@ var LabelCustomer = (function () {
 
   // ───────────────────────── 엑셀로 품목 불러오기 (PREMIUM) ─────────────────────────
   // 첫 줄 제목을 보고 칸을 찾아요. 같은 뜻의 제목(별칭)도 알아봐요
-  var ALIASES = [
-    ['상품명', '제품명', '품명', '상품', '제품', '이름', '품목', '품목명', '메뉴', '메뉴명'],
-    ['부제', '부제목', '영문', '영문명', '영문이름', '영문표기', '서브', '설명'],
-    ['용량', '내용량', '중량', '무게', '양'],
-    ['제조일', '제조일자', '만든날', '생산일', '생산일자', '로스팅일', '로스팅날짜'],
-    ['원재료', '원재료명', '성분', '전성분', '재료', '원료'],
-    ['qr링크', 'qr', 'qr코드', 'qr주소', '링크', 'url', '주소', '스토어주소'],
-    ['바코드', '바코드번호', 'ean'],
-    ['lot', 'lot번호', '로트', '로트번호']
-  ];
   var COUNT_KEYS = ['수량', '개수', '매수', '장수', '인쇄수량', '인쇄매수'];
   var PERIOD_KEYS = ['유통기간', '소비기간', '기간', '보관기간', '사용기간'];
-  function normKey(t) { return String(t == null ? '' : t).toLowerCase().replace(/\(.*?\)|\[.*?\]/g, '').replace(/[\s·._\-:\/]/g, ''); }
-  function aliasGroup(k) { for (var i = 0; i < ALIASES.length; i++) if (ALIASES[i].indexOf(k) >= 0) return i; return -1; }
-  function importTargets(d) {
-    return C.editableFields(d).filter(function (el) { return el.customer.editable && (el.type === 'text' || el.type === 'qr' || el.type === 'barcode'); });
-  }
+  var normKey = C.normKey, aliasGroup = C.aliasGroup;
+  function importTargets(d) { return C.importFields(d); }
   // 제목 줄 → 칸 연결: [{ col, el, key: 'text'|'offset'|'count', title }]
   function mapHeaders(d, header) {
     var fields = importTargets(d), used = {}, out = [];
@@ -3726,21 +3834,9 @@ var LabelCustomer = (function () {
   }
   // 이 라벨에 맞는 엑셀 양식 (제목 줄 + 지금 품목들)
   function downloadTemplate() {
-    var d = design(), fields = importTargets(d);
-    var header = fields.map(function (el) {
-      if (el.customer.input === 'dateCalc') return '유통기간(' + ({ day: '일', month: '개월', year: '년' }[el.customer.unit] || '일') + ')';
-      return el.customer.label || el.name;
-    }).concat(['수량']);
-    var rows = [header];
-    itemsOf(d).forEach(function (it) {
-      var v = valuesOf(it);
-      rows.push(fields.map(function (el) {
-        var sl = v[el.id] || {};
-        if (el.customer.input === 'dateCalc') return sl.offset != null ? sl.offset : el.customer.offset;
-        if (el.customer.input === 'date') return C.dateISOFor(d, el, v);
-        return C.rawText(d, el, v);
-      }).concat([it.count || 0]));
-    });
+    var d = design();
+    var rows = C.templateTable(d, itemsOf(d).map(function (it) { return { values: valuesOf(it), count: it.count || 0 }; }));
+    var header = rows[0];
     var name = C.safeName(P.meta.title) + '_품목_양식';
     if (typeof XLSX !== 'undefined') {
       var wb = XLSX.utils.book_new(), ws = XLSX.utils.aoa_to_sheet(rows);
