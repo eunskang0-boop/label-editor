@@ -1362,10 +1362,13 @@ var LabelCore = (function () {
   function planOf(p) { return p && p.meta && p.meta.plan === 'deluxe' && !tierOf(p) ? 'deluxe' : 'premium'; }
   // B2B(회사·연구소·제조사) 패키지: 편집기는 PREMIUM과 같고(전체 도구 12가지), 디자인 수·라벨지 규격·품목 입력 대행 범위가 다름
   var B2B = {
-    starter: { id: 'starter', name: 'B2B STARTER', price: '390,000원', designs: 3, sheets: 2, items: 30 },
-    business: { id: 'business', name: 'B2B BUSINESS', price: '590,000원', designs: 6, sheets: 3, items: 150, manual: true },
-    enterprise: { id: 'enterprise', name: 'B2B ENTERPRISE', price: '990,000원', designs: 10, sheets: 5, items: 500, manual: true, styleGuide: true }
+    starter: { id: 'starter', name: 'B2B STARTER', price: '390,000원', designs: 3, sheets: 2, items: 30, support: 30 },
+    business: { id: 'business', name: 'B2B BUSINESS', price: '590,000원', designs: 6, sheets: 3, items: 150, support: 60, manual: true },
+    enterprise: { id: 'enterprise', name: 'B2B ENTERPRISE', price: '990,000원', designs: 10, sheets: 5, items: 500, support: 90, manual: true, styleGuide: true }
   };
+  // 사후 지원 기간(일) — 납품 후 크몽 메시지로 인쇄 세팅 · 사용 문의 지원
+  var SUPPORT_DAYS = { standard: 14, deluxe: 30, premium: 30 };
+  function supportDays(pack) { return pack && pack.indexOf('b2b-') === 0 ? (B2B[pack.slice(4)] || {}).support : SUPPORT_DAYS[pack]; }
   function tierOf(p) { var t = p && p.meta && p.meta.tier; return t && B2B[t] ? t : null; }
   function planTools(plan) { return TOOLS.filter(function (t) { return plan === 'premium' || !t.premium; }); }
   // DELUXE에 옵션으로 더할 수 있는 도구 (사업 계획서의 추가 옵션)
@@ -2381,7 +2384,7 @@ var LabelCore = (function () {
     DATE_FORMATS: DATE_FORMATS, todayISO: todayISO, formatDate: formatDate, addDate: addDate, parseISO: parseISO, formatNumber: formatNumber,
     rawText: rawText, displayText: displayText, isVisible: isVisible, colorKey: colorKey, colorOf: colorOf, findEl: findEl, dateISOFor: dateISOFor,
     effEl: effEl, layoutRange: layoutRange, LAYOUT_KEYS: LAYOUT_KEYS,
-    PLANS: PLANS, TOOLS: TOOLS, ADDONS: ADDONS, B2B: B2B, tierOf: tierOf, planOf: planOf, planTools: planTools, features: features, toolsFor: toolsFor, EDITOR_ACCENT: EDITOR_ACCENT, packageReport: packageReport,
+    PLANS: PLANS, TOOLS: TOOLS, ADDONS: ADDONS, B2B: B2B, tierOf: tierOf, SUPPORT_DAYS: SUPPORT_DAYS, supportDays: supportDays, planOf: planOf, planTools: planTools, features: features, toolsFor: toolsFor, EDITOR_ACCENT: EDITOR_ACCENT, packageReport: packageReport,
     deluxeEditable: deluxeEditable, sheetPDF: sheetPDF,
     FIELD_ALIASES: FIELD_ALIASES, normKey: normKey, aliasGroup: aliasGroup, importFields: importFields, templateTable: templateTable,
     qrModules: qrModules, eanData: eanData,
