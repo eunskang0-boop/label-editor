@@ -2845,7 +2845,9 @@ var LabelCustomer = (function () {
     var d = P.designs.filter(function (x) { return x.id === item.designId; })[0];
     if (item.nameEl) { var ne = C.findEl(d, item.nameEl); if (ne) { var nt = String(C.rawText(d, ne, valuesOf(item)) || '').trim(); if (nt) return nt.slice(0, 18); } }
     if (item.name) return item.name;
-    var first = C.editableFields(d).filter(function (el) { return el.type === 'text' && el.customer.editable && ['text', 'select', 'multiline'].indexOf(el.customer.input) >= 0; })[0];
+    // 이름 없는 품목(엑셀로 만든 품목 등): 제품명 칸 → 그 밖의 품목별 글자 칸 순서 (모든 품목 공통 칸은 이름으로 안 씀)
+    var cand = C.editableFields(d).filter(function (el) { return el.type === 'text' && el.customer.editable && !el.customer.shared && ['text', 'select', 'multiline'].indexOf(el.customer.input) >= 0; });
+    var first = cand.filter(function (el) { return /제품명|상품명|품명|품목명|이름|name/i.test((el.customer.label || '') + ' ' + el.name); })[0] || cand[0];
     if (first) { var t = C.rawText(d, first, valuesOf(item)); if (t && t.trim()) return t.trim().slice(0, 18); }
     return '품목 ' + ((idx == null ? itemsOf(d).indexOf(item) : idx) + 1);
   }
