@@ -2718,7 +2718,11 @@ var LabelCustomer = (function () {
   function presetItems(d) {
     var list = d.presets && d.presets.length ? d.presets : [{ id: 'base', name: '', values: {} }];
     return list.map(function (pr) {
-      return { id: !F.items ? 'pre_' + d.id + '_' + pr.id : C.uid('i'), designId: d.id, name: pr.name || '', values: C.clone(pr.values || {}), count: Math.max(0, Math.round(C.num(pr.count, 0))) };
+      var it = { id: !F.items ? 'pre_' + d.id + '_' + pr.id : C.uid('i'), designId: d.id, name: pr.name || '', values: C.clone(pr.values || {}), count: Math.max(0, Math.round(C.num(pr.count, 0))) };
+      // 품목 이름이 제품명 칸 내용과 같으면, 고객이 제품명을 고칠 때 목록 이름도 따라 바뀌게
+      var same = it.name && C.editableFields(d).filter(function (el) { return el.type === 'text' && String(C.rawText(d, el, it.values)).trim() === it.name.trim(); })[0];
+      if (same) it.nameEl = same.id;
+      return it;
     });
   }
   // DELUXE: 품목은 항상 납품 품목. 잠긴 칸(상품명·부제·원재료 등)은 저장값이 아니라 라벨 파일에서 읽고,
@@ -2776,8 +2780,9 @@ var LabelCustomer = (function () {
     return bag[el.id] || (bag[el.id] = {});
   }
   function itemName(item, idx) {
-    if (item.name) return item.name;
     var d = P.designs.filter(function (x) { return x.id === item.designId; })[0];
+    if (item.nameEl) { var ne = C.findEl(d, item.nameEl); if (ne) { var nt = String(C.rawText(d, ne, valuesOf(item)) || '').trim(); if (nt) return nt.slice(0, 18); } }
+    if (item.name) return item.name;
     var first = C.editableFields(d).filter(function (el) { return el.type === 'text' && el.customer.editable && ['text', 'select', 'multiline'].indexOf(el.customer.input) >= 0; })[0];
     if (first) { var t = C.rawText(d, first, valuesOf(item)); if (t && t.trim()) return t.trim().slice(0, 18); }
     return '품목 ' + ((idx == null ? itemsOf(d).indexOf(item) : idx) + 1);
@@ -3080,7 +3085,7 @@ var LabelCustomer = (function () {
     if (first) first.focus();
   }
   function dupItem(it) {
-    var c = C.clone(it); c.id = C.uid('i'); c.name = it.name ? it.name + ' 복사' : '';
+    var c = C.clone(it); c.id = C.uid('i'); c.name = itemName(it) + ' 복사'; delete c.nameEl;
     st.items.splice(st.items.indexOf(it) + 1, 0, c);
     st.cur[it.designId] = c.id; save(); renderAll();
   }
@@ -3093,7 +3098,7 @@ var LabelCustomer = (function () {
   function renameItem(it, i) {
     var inp = h('input', { class: 'inp', value: it.name || itemName(it, i), placeholder: '예: 딸기잼 250g' });
     U.modal({ title: '품목 이름', body: [h('div', { class: 'field' }, h('label', { text: '목록에서 구분하기 위한 이름이에요 (인쇄되지 않아요)' }), inp)],
-      actions: [{ label: '취소' }, { label: '저장', primary: true, onClick: function () { it.name = inp.value.trim(); save(); renderItems(); renderPrint(); } }] });
+      actions: [{ label: '취소' }, { label: '저장', primary: true, onClick: function () { it.name = inp.value.trim(); delete it.nameEl; save(); renderItems(); renderPrint(); } }] });
   }
 
   // ───────────────────────── 입력 폼 ─────────────────────────
