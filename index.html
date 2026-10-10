@@ -1376,11 +1376,12 @@ var LabelCore = (function () {
     { no: 11, name: 'QR코드 생성', premium: true }, { no: 12, name: '고해상도 PDF 저장', premium: true }
   ];
   function planOf(p) { return p && p.meta && p.meta.plan === 'deluxe' && !tierOf(p) ? 'deluxe' : 'premium'; }
-  // B2B(회사·연구소·제조사) 패키지: 도구는 PREMIUM과 같고(전체 도구 12가지) 직원용 운영표도 모두 포함
+  // B2B(회사·연구소·제조사) 패키지: 직원용 운영표는 모두 포함
+  // tools: 들어 있는 옵션 기능 (없으면 전체 도구 12가지) — STARTER는 기본 8가지 + 유통기한(사용기한) 자동 계산, 엑셀 · QR · PDF는 옵션
   // limit: 품목 한도 — 납품 때 등록한 품목만 쓰고 제품을 구분하는 칸(제품명·제품 설명·REF·바코드)은 잠금 (0 = 무제한, 고객이 직접 추가)
-  // items: 품목 입력 대행(포함) 수
+  // items: 등록(입력 대행) 포함 수
   var B2B = {
-    starter: { id: 'starter', name: 'B2B STARTER', price: '390,000원', designs: 3, sheets: 2, items: 10, limit: 10, support: 30, manual: true },
+    starter: { id: 'starter', name: 'B2B STARTER', price: '390,000원', designs: 3, sheets: 2, items: 10, limit: 10, support: 30, manual: true, tools: ['expiry', 'color', 'video'] },
     business: { id: 'business', name: 'B2B BUSINESS', price: '590,000원', designs: 6, sheets: 3, items: 30, limit: 30, support: 60, manual: true },
     enterprise: { id: 'enterprise', name: 'B2B ENTERPRISE', price: '990,000원', designs: 10, sheets: 5, items: 100, limit: 0, support: 90, manual: true, styleGuide: true }
   };
@@ -1399,14 +1400,27 @@ var LabelCore = (function () {
     { key: 'color', name: '색상 선택 기능', price: '19,000원' }, // 판매자가 '고객이 색상을 바꿀 수 있게' 켠 칸의 색을 고객이 고름 (글자는 잠겨 있어도)
     { key: 'video', name: '사용법 영상', price: '29,000원' } // 납품 zip에 DELUXE용 사용법 영상
   ];
-  // 이 파일에 들어가는 기능: PREMIUM은 전부, DELUXE는 기본 8가지 + 구매한 옵션
-  // B2B 품목 한도 패키지(STARTER · BUSINESS): 도구는 전부, 품목은 납품 품목만, 제품을 구분하는 칸만 잠금 (lock 'identity')
+  // 패키지에 기본으로 들어 있는 옵션 기능: null = 전부 (PREMIUM · B2B BUSINESS · ENTERPRISE), DELUXE = 없음, B2B STARTER = tools
+  function includedAddons(p) {
+    var T = tierOf(p) ? B2B[tierOf(p)] : null;
+    if (T) return T.tools || null;
+    return planOf(p) === 'premium' ? null : [];
+  }
+  // 이 파일에 들어가는 기능: PREMIUM은 전부, DELUXE는 기본 8가지 + 구매한 옵션, B2B STARTER는 기본 8가지 + 사용기한 자동 계산 + 구매한 옵션
+  // B2B 품목 한도 패키지(STARTER · BUSINESS): 품목은 납품 품목만, 제품을 구분하는 칸만 잠금 (lock 'identity')
   function features(p) {
-    var prem = planOf(p) === 'premium', ad = (p && p.meta && p.meta.addons) || {}, T = tierOf(p) ? B2B[tierOf(p)] : null;
+    var prem = planOf(p) === 'premium', ad = (p && p.meta && p.meta.addons) || {}, T = tierOf(p) ? B2B[tierOf(p)] : null, inc = includedAddons(p);
     var capped = !!(T && T.limit);
     var f = { plan: prem ? 'premium' : 'deluxe', allText: prem && !capped, items: prem && !capped, lock: capped ? 'identity' : prem ? null : 'deluxe', limit: capped ? T.limit : 0 };
-    ADDONS.forEach(function (a) { f[a.key] = prem || !!ad[a.key]; });
+    ADDONS.forEach(function (a) { f[a.key] = (inc ? inc.indexOf(a.key) >= 0 : true) || !!ad[a.key]; });
     return f;
+  }
+  // 편집기에 보이는 패키지 이름 · 도구 수 (B2B는 단계 이름)
+  function planInfo(p) {
+    var T = tierOf(p) ? B2B[tierOf(p)] : null;
+    if (!T) return PLANS[planOf(p)];
+    var n = T.tools ? 8 + ADDONS.filter(function (a) { return a.no && T.tools.indexOf(a.key) >= 0; }).length : 12;
+    return { id: T.id, name: T.name, title: T.name, tools: n === 12 ? '전체 도구 12가지' : '도구 ' + n + '가지' };
   }
   // 제품을 구분하는 칸 (B2B 품목 한도 패키지에서 잠금) — 판매자가 요소 설정에서 정하면(customer.identity) 그대로, 아니면 이름으로 짐작
   var IDENTITY_HINT = /제품명|상품명|품명|품목명|제품\s*종류|제품\s*설명|부제|영문|REF|카탈로그|품번|모델명|바코드|product|catalog/i;
@@ -1417,12 +1431,13 @@ var LabelCore = (function () {
     return el.type === 'text' && !c.shared && IDENTITY_HINT.test((c.label || '') + ' ' + (el.name || ''));
   }
   function toolsFor(p) {
-    var f = features(p);
+    var f = features(p), inc = includedAddons(p);
+    var addonOf = function (t) { return ADDONS.filter(function (x) { return x.no === t.no; })[0]; };
     return TOOLS.filter(function (t) {
       if (!t.premium) return true;
-      var a = ADDONS.filter(function (x) { return x.no === t.no; })[0];
+      var a = addonOf(t);
       return a && f[a.key];
-    }).map(function (t) { return { no: t.no, name: t.name, option: !!t.premium && f.plan === 'deluxe' }; });
+    }).map(function (t) { return { no: t.no, name: t.name, option: !!t.premium && !!inc && inc.indexOf(addonOf(t).key) < 0 }; });
   }
   // 패키지 점검: 사업 계획서의 패키지 구성과 비교 → [{ kind: 'ok'|'opt'|'warn', text }]
   function packageReport(p) {
@@ -1453,7 +1468,9 @@ var LabelCore = (function () {
     var ns = Object.keys(specs).length, freeS = T ? T.sheets : plan === 'premium' ? 2 : 1;
     if (ns > freeS) add('opt', '라벨지 규격 ' + ns + '개 — 규격 추가 옵션 ' + (ns - freeS) + '개 (포함 ' + freeS + '개)');
     else add('ok', '라벨지 규격 ' + ns + '개 (포함 ' + freeS + '개)');
-    if (plan === 'deluxe') ADDONS.forEach(function (a) { if (f[a.key]) add('opt', a.name + ' (' + a.price + ')'); });
+    var inc = includedAddons(p);
+    if (T) add('ok', planInfo(p).tools + (T.tools ? ' (기본 8가지 + 유통기한 자동 계산, 엑셀 · QR · PDF는 옵션)' : ''));
+    if (inc) ADDONS.forEach(function (a) { if (f[a.key] && inc.indexOf(a.key) < 0) add('opt', a.name + ' (' + a.price + ')'); });
     if (f.excel) add('ok', '엑셀 양식(라벨_품목_양식.xlsx)도 함께 보내세요');
     p.designs.forEach(function (d) {
       d.elements.filter(brandOpen).forEach(function (el) {
@@ -2446,7 +2463,7 @@ var LabelCore = (function () {
     DATE_FORMATS: DATE_FORMATS, todayISO: todayISO, formatDate: formatDate, addDate: addDate, parseISO: parseISO, formatNumber: formatNumber,
     rawText: rawText, displayText: displayText, isVisible: isVisible, colorKey: colorKey, colorOf: colorOf, findEl: findEl, dateISOFor: dateISOFor,
     effEl: effEl, layoutRange: layoutRange, LAYOUT_KEYS: LAYOUT_KEYS,
-    PLANS: PLANS, TOOLS: TOOLS, ADDONS: ADDONS, isBrandField: isBrandField, brandOpen: brandOpen, identityField: identityField, ITEM_PACK: ITEM_PACK, B2B: B2B, tierOf: tierOf, SUPPORT_DAYS: SUPPORT_DAYS, supportDays: supportDays, planOf: planOf, planTools: planTools, features: features, toolsFor: toolsFor, EDITOR_ACCENT: EDITOR_ACCENT, packageReport: packageReport,
+    PLANS: PLANS, TOOLS: TOOLS, ADDONS: ADDONS, isBrandField: isBrandField, brandOpen: brandOpen, identityField: identityField, ITEM_PACK: ITEM_PACK, includedAddons: includedAddons, planInfo: planInfo, B2B: B2B, tierOf: tierOf, SUPPORT_DAYS: SUPPORT_DAYS, supportDays: supportDays, planOf: planOf, planTools: planTools, features: features, toolsFor: toolsFor, EDITOR_ACCENT: EDITOR_ACCENT, packageReport: packageReport,
     deluxeEditable: deluxeEditable, sheetPDF: sheetPDF,
     FIELD_ALIASES: FIELD_ALIASES, normKey: normKey, aliasGroup: aliasGroup, importFields: importFields, templateTable: templateTable,
     qrModules: qrModules, eanData: eanData,
@@ -3072,7 +3089,7 @@ var LabelCustomer = (function () {
   }
   // 이 파일에 들어 있는 기능 (패키지별)
   function featureCard() {
-    var info = C.PLANS[PLAN], tools = C.toolsFor(P), opts = tools.filter(function (t) { return t.option; }).length;
+    var info = C.planInfo(P), tools = C.toolsFor(P), opts = tools.filter(function (t) { return t.option; }).length;
     var list = h('ul', { class: 'c-feat-list' });
     tools.forEach(function (t) { list.appendChild(h('li', { class: t.option ? 'opt' : '' }, icon('check', 14), h('span', { text: t.name }), t.option ? h('small', { text: '옵션' }) : null)); });
     return h('div', { class: 'c-card c-feat' },
@@ -3759,7 +3776,7 @@ var LabelCustomer = (function () {
         h('li', {}, h('b', { text: '인쇄' }), ' — "인쇄하기" → 배율 100%, 여백 없음 확인 → 인쇄.')),
       h('div', { class: 'callout' }, icon('info', 16), h('span', { text: '입력한 내용은 이 컴퓨터의 브라우저에만 자동 저장되고 어디로도 보내지 않아요. 브라우저 기록을 지우거나 다른 컴퓨터에서 쓰려면 "백업"으로 파일을 저장해 두세요.' })),
       h('div', { class: 'callout', style: { marginTop: '8px' } }, icon('help', 16), h('span', { text: '디자인 자체를 바꾸고 싶다면 (새 칸 추가, 디자인 변경 등) 제작자에게 요청하세요. 같은 파일로 업데이트되어 입력해 둔 내용은 유지돼요.' })),
-      h('p', { class: 'small muted', style: { marginTop: '10px' }, text: C.PLANS[PLAN].name + ' · ' + C.PLANS[PLAN].tools + ' — ' + (C.tierOf(P) ? '구매하신 회사 안에서만 쓸 수 있어요. 다른 회사·거래처에' : '구매하신 브랜드의 라벨에만 쓸 수 있어요. 다른 브랜드·업체에') + ' 넘기거나 파일을 수정·재배포하는 것은 금지돼요.' })
+      h('p', { class: 'small muted', style: { marginTop: '10px' }, text: C.planInfo(P).name + ' · ' + C.planInfo(P).tools + ' — ' + (C.tierOf(P) ? '구매하신 회사 안에서만 쓸 수 있어요. 다른 회사·거래처에' : '구매하신 브랜드의 라벨에만 쓸 수 있어요. 다른 브랜드·업체에') + ' 넘기거나 파일을 수정·재배포하는 것은 금지돼요.' })
     ], actions: [{ label: '닫기', primary: true }] });
   }
 
