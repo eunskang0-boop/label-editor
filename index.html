@@ -1376,7 +1376,7 @@ var LabelCore = (function () {
     { no: 11, name: 'QR코드 생성', premium: true }, { no: 12, name: '고해상도 PDF 저장', premium: true }
   ];
   function planOf(p) { return p && p.meta && p.meta.plan === 'deluxe' && !tierOf(p) ? 'deluxe' : 'premium'; }
-  // B2B(회사·연구소·제조사) 패키지: 직원용 운영표는 모두 포함
+  // B2B(회사·연구소·제조사) 패키지: 사용자용 운영표는 모두 포함
   // tools: 들어 있는 옵션 기능 (없으면 전체 도구 12가지) — STARTER는 기본 8가지 + 유통기한(사용기한) 자동 계산, 엑셀 · QR · PDF는 옵션
   // limit: 품목 한도 — 납품 때 등록한 품목만 쓰고 제품을 구분하는 칸(제품명·제품 설명·REF·바코드)은 잠금 (0 = 무제한, 고객이 직접 추가)
   // items: 등록(입력 대행) 포함 수
@@ -1488,7 +1488,7 @@ var LabelCore = (function () {
         else add('ok', '품목 ' + items + '개 (포함 ' + T.limit + '개까지 · 납품 품목만 · 제품을 구분하는 칸 잠금)');
       } else if (items > T.items) add('opt', '품목 입력 대행 ' + items + '개 — ' + T.name + ' 포함 ' + T.items + '개를 넘어요 (제품 ' + ITEM_PACK.n + '개 추가 옵션 ' + packs(items - T.items) + '개)');
       else add('ok', '품목 무제한 (고객이 직접 추가) · 입력 대행 ' + items + '개 (포함 ' + T.items + '개까지)');
-      if (T.manual) add('ok', '직원용 라벨 운영표(라벨_운영표.pdf) — 납품 스크립트가 만들어요');
+      if (T.manual) add('ok', '사용자용 라벨 운영표(라벨_운영표.pdf) — 납품 스크립트가 만들어요');
       if (T.styleGuide) add('ok', '라벨 스타일 가이드 PDF(제품군 색 · 정보 배치 규칙)도 함께 보내세요');
     }
     return out;
