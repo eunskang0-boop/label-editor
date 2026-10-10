@@ -1437,6 +1437,11 @@ var LabelCore = (function () {
     else add('ok', '라벨지 규격 ' + ns + '개 (포함 ' + freeS + '개)');
     if (plan === 'deluxe') ADDONS.forEach(function (a) { if (f[a.key]) add('opt', a.name + ' (' + a.price + ')'); });
     if (f.excel) add('ok', '엑셀 양식(라벨_품목_양식.xlsx)도 함께 보내세요');
+    p.designs.forEach(function (d) {
+      d.elements.filter(brandOpen).forEach(function (el) {
+        add('warn', d.name + ': "' + ((el.customer && el.customer.label) || el.name) + '" 칸을 고객이 바꿀 수 있어요 — 브랜드·업체 정보는 잠가 두세요 (여러 브랜드용 주문이면 요소 설정에서 "여러 브랜드·업체용" 체크)');
+      });
+    });
     if (f.video) add('ok', '사용법 영상도 함께 보내세요');
     if (plan === 'deluxe' && f.color && !p.designs.some(function (d) { return d.elements.some(function (el) { return el.customer && el.customer.colorEditable; }); }))
       add('warn', '색상 선택 옵션 — 고객이 색을 고를 칸이 없어요 (요소 → "고객이 색상을 바꿀 수 있게 하기")');
@@ -1448,6 +1453,19 @@ var LabelCore = (function () {
       if (T.styleGuide) add('ok', '라벨 스타일 가이드 PDF(제품군 색 · 정보 배치 규칙)도 함께 보내세요');
     }
     return out;
+  }
+  // 브랜드·업체 정보 칸: 고객이 고칠 수 있으면 다른 브랜드·업체가 편집기를 그대로 쓸 수 있음 → 잠가 두기
+  // (여러 브랜드를 파는 주문처럼 일부러 열어 둘 때는 요소 설정의 '여러 브랜드·업체용' = customer.brandOk)
+  var BRAND_HINT = /브랜드|상호|회사|업체|로고|제조원|제조사|판매원|판매처|유통사|수입원|스토어|매장|홈페이지|웹사이트|연락처|전화|주소|brand|logo|company|manufacturer|website/i;
+  function isBrandField(el) {
+    var c = el.customer || {};
+    if (el.type === 'image') return true; // 바꿀 수 있는 이미지 = 로고를 바꿀 수 있음
+    return el.type === 'text' && BRAND_HINT.test((c.label || '') + ' ' + (el.name || ''));
+  }
+  function brandOpen(el) {
+    var c = el.customer || {};
+    if (c.brandOk || el.hidden) return false;
+    return isBrandField(el) && (el.type === 'image' ? !!c.imageEditable : !!c.editable);
   }
   // 고객 편집기 화면 색 — 디자인과 상관없이 항상 같음 (상세페이지 화면과 동일)
   var EDITOR_ACCENT = '#24392e';
@@ -2181,7 +2199,8 @@ var LabelCore = (function () {
     editable: false, label: '', input: 'text', help: '', maxLength: 0, options: '', shared: false, order: 0,
     today: false, dateFormat: 'YYYY.MM.DD', baseId: '', offset: 30, unit: 'day', minus1: false, comma: true,
     colorEditable: false, colorOptions: '', toggle: false, defaultOn: true, imageEditable: false,
-    deluxe: null // DELUXE에서도 고객이 수정 (null = 날짜·용량 등은 자동으로 허용)
+    deluxe: null, // DELUXE에서도 고객이 수정 (null = 날짜·용량 등은 자동으로 허용)
+    brandOk: false // 브랜드·업체 정보 칸을 일부러 열어 둠 (여러 브랜드용 주문) — 패키지 점검 경고 끄기
   };
   var TYPE_DEFAULTS = {
     text: { text: '텍스트를 입력하세요', prefix: '', suffix: '', font: 'Noto Sans KR', weight: 500, italic: false, size: 12, color: '#212529',
@@ -2404,7 +2423,7 @@ var LabelCore = (function () {
     DATE_FORMATS: DATE_FORMATS, todayISO: todayISO, formatDate: formatDate, addDate: addDate, parseISO: parseISO, formatNumber: formatNumber,
     rawText: rawText, displayText: displayText, isVisible: isVisible, colorKey: colorKey, colorOf: colorOf, findEl: findEl, dateISOFor: dateISOFor,
     effEl: effEl, layoutRange: layoutRange, LAYOUT_KEYS: LAYOUT_KEYS,
-    PLANS: PLANS, TOOLS: TOOLS, ADDONS: ADDONS, B2B: B2B, tierOf: tierOf, SUPPORT_DAYS: SUPPORT_DAYS, supportDays: supportDays, planOf: planOf, planTools: planTools, features: features, toolsFor: toolsFor, EDITOR_ACCENT: EDITOR_ACCENT, packageReport: packageReport,
+    PLANS: PLANS, TOOLS: TOOLS, ADDONS: ADDONS, isBrandField: isBrandField, brandOpen: brandOpen, B2B: B2B, tierOf: tierOf, SUPPORT_DAYS: SUPPORT_DAYS, supportDays: supportDays, planOf: planOf, planTools: planTools, features: features, toolsFor: toolsFor, EDITOR_ACCENT: EDITOR_ACCENT, packageReport: packageReport,
     deluxeEditable: deluxeEditable, sheetPDF: sheetPDF,
     FIELD_ALIASES: FIELD_ALIASES, normKey: normKey, aliasGroup: aliasGroup, importFields: importFields, templateTable: templateTable,
     qrModules: qrModules, eanData: eanData,
@@ -3715,7 +3734,7 @@ var LabelCustomer = (function () {
         h('li', {}, h('b', { text: '인쇄' }), ' — "인쇄하기" → 배율 100%, 여백 없음 확인 → 인쇄.')),
       h('div', { class: 'callout' }, icon('info', 16), h('span', { text: '입력한 내용은 이 컴퓨터의 브라우저에만 자동 저장되고 어디로도 보내지 않아요. 브라우저 기록을 지우거나 다른 컴퓨터에서 쓰려면 "백업"으로 파일을 저장해 두세요.' })),
       h('div', { class: 'callout', style: { marginTop: '8px' } }, icon('help', 16), h('span', { text: '디자인 자체를 바꾸고 싶다면 (새 칸 추가, 디자인 변경 등) 제작자에게 요청하세요. 같은 파일로 업데이트되어 입력해 둔 내용은 유지돼요.' })),
-      h('p', { class: 'small muted', style: { marginTop: '10px' }, text: C.PLANS[PLAN].name + ' · ' + C.PLANS[PLAN].tools + ' — 이 편집기 파일의 수정·재배포는 금지돼요.' })
+      h('p', { class: 'small muted', style: { marginTop: '10px' }, text: C.PLANS[PLAN].name + ' · ' + C.PLANS[PLAN].tools + ' — ' + (C.tierOf(P) ? '구매하신 회사 안에서만 쓸 수 있어요. 다른 회사·거래처에' : '구매하신 브랜드의 라벨에만 쓸 수 있어요. 다른 브랜드·업체에') + ' 넘기거나 파일을 수정·재배포하는 것은 금지돼요.' })
     ], actions: [{ label: '닫기', primary: true }] });
   }
 
