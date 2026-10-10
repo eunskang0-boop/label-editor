@@ -305,11 +305,6 @@ ol.steps li { margin: 4px 0; }
 /* 패키지 (DELUXE · PREMIUM) */
 .c-plan-badge { background: var(--accent-soft); color: var(--accent); font-weight: 700; }
 .c-item-tools { gap: 4px; }
-.c-field.is-locked .c-field-head > label:first-child { color: var(--ink-2); }
-.c-locked { display: flex; align-items: center; gap: 8px; color: var(--ink-2); }
-.c-locked .ic { color: var(--ink-3); flex: none; }
-.c-locked .pre { white-space: pre-wrap; }
-.c-sw-mini { width: 18px; height: 18px; border-radius: 50%; box-shadow: 0 0 0 1px var(--line-2); flex: none; }
 .c-feat { padding: 12px 14px 14px; }
 .c-feat-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; }
 .c-feat-head b { font-size: 12.5px; letter-spacing: .08em; color: var(--accent); }
@@ -2755,8 +2750,6 @@ var LabelCustomer = (function () {
   var report = {};
   var PLAN = 'premium'; // 'deluxe'(기본 도구 8가지) | 'premium'(전체 도구 12가지) — 라벨 파일에 판매자가 정해 둠
   var F = {}; // 이 파일에 들어간 기능 (C.features): allText, items, lock, excel, expiry, qr, pdf, color, video
-  // 잠긴 칸 안내 — DELUXE: 날짜·용량 말고는 납품 그대로 / B2B 품목 한도: 제품을 구분하는 칸만 잠금
-  function lockNote() { return F.lock === 'identity' ? '납품 때 등록한 제품 정보예요. 제품 추가·변경은 제작자에게 요청해 주세요.' : '납품 때 정해진 항목이에요. 바꾸려면 PREMIUM이 필요해요.'; }
   var SEL = null; // 미리보기에서 고른 글자 (위치·크기 조절)
 
   function design() { return P.designs[di]; }
@@ -3195,21 +3188,20 @@ var LabelCustomer = (function () {
   function renderForm() {
     U.clear(R.form);
     var d = design(), item = curItem();
-    var fields = C.editableFields(d);
+    // 고칠 수 없는 칸(DELUXE · B2B 한도 패키지의 제품명 · 원재료 · REF 등)은 입력란에 아예 보이지 않음 — 고객에게는 바꿀 수 있는 칸만
+    var fields = C.editableFields(d).filter(function (el) { return !el.customer.locked || (el.customer.colorEditable && F.color); });
     if (!fields.length) { R.form.appendChild(h('p', { class: 'muted', text: '이 디자인은 고칠 항목이 없어요. 바로 인쇄하면 됩니다.' })); return; }
     var values = valuesOf(item);
     fields.forEach(function (el) {
       var c = el.customer;
       var slot = slotFor(item, el);
-      var label = c.label || el.name;
-      var wrap = h('div', { class: 'c-field' + (c.locked ? ' is-locked' : ''), 'data-el': el.id });
+      var label = (c.label || el.name) + (c.locked && c.editable ? ' 색' : '');
+      var wrap = h('div', { class: 'c-field', 'data-el': el.id });
       var head = h('div', { class: 'c-field-head' }, h('label', { for: 'f-' + el.id, text: label }),
-        c.locked ? h('span', { class: 'badge gray', title: lockNote(), text: '고정' }) :
         c.shared ? h('span', { class: 'badge gray', title: '모든 품목에 똑같이 들어가요', text: '공통' }) : null);
       wrap.appendChild(head);
-      if (c.locked) {
-        wrap.appendChild(lockedControl(d, el, values));
-        if (c.colorEditable && F.color) wrap.appendChild(colorControl(el, slot)); // DELUXE 색상 선택 옵션: 글자는 잠겨도 색은 고름
+      if (c.locked) { // 글자는 잠기고 색만 고르는 칸 (DELUXE 색상 선택 옵션)
+        wrap.appendChild(colorControl(el, slot));
         R.form.appendChild(wrap); return;
       }
       var visible = C.isVisible(el, values);
@@ -3230,14 +3222,6 @@ var LabelCustomer = (function () {
     updateFieldWarnings();
   }
 
-  // DELUXE: 납품 때 정한 칸은 보기만
-  function lockedControl(d, el, values) {
-    var c = el.customer, parts = [icon('lock', 14)];
-    if (c.editable && (el.type === 'text' || el.type === 'barcode')) parts.push(h('span', { class: 'pre', text: C.displayText(d, el, values) || '—' }));
-    else if (c.toggle && !c.colorEditable) parts.push(h('span', { text: C.isVisible(el, values) ? '넣기' : '빼기' }));
-    if (c.colorEditable && !F.color) parts.push(h('span', { class: 'c-sw-mini', style: { background: C.colorOf(el, values) } }));
-    return h('div', { class: 'c-ctl' }, h('div', { class: 'readonly c-locked', id: 'f-' + el.id }, parts), h('div', { class: 'hint', text: lockNote() }));
-  }
   // DELUXE 유통기한: 고객이 날짜를 직접 넣어요 (비우면 라벨에 표시 안 함)
   function expiryControl(d, el, slot, values) {
     var di2 = h('input', { type: 'date', class: 'inp', id: 'f-' + el.id, value: C.parseISO(slot.text) ? slot.text : '' });
